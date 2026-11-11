@@ -1,0 +1,74 @@
+name: Extract Cash N Carry staging source
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type EXTRACT_STAGING to extract the source into this staging branch'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    if: github.ref_name == 'development/cloudflare-staging' && inputs.confirmation == 'EXTRACT_STAGING'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Extract and validate staging archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, zipfile, re, stat
+          root = pathlib.Path('.').resolve()
+          archive = root / 'CashNCarry-Staging.zip'
+          assert archive.is_file(), 'The source ZIP is missing'
+          prefix = 'cash-n-carry-nigeria-rebuild/'
+          forbidden = re.compile(r'(^|/)(\.env(?!\.example$)|\.git|node_modules|\.next|__pycache__)(/|$)|\.(pem|key|p12|pfx)$', re.I)
+          total = 0
+          with zipfile.ZipFile(archive) as z:
+              files = [i for i in z.infolist() if not i.is_dir()]
+              assert len(files) >= 100, 'Unexpected source file count'
+              for entry in files:
+                  name = entry.filename
+                  assert name.startswith(prefix), f'Unexpected archive path: {name}'
+                  relative = name[len(prefix):]
+                  assert relative and not pathlib.PurePosixPath(relative).is_absolute()
+                  assert '..' not in pathlib.PurePosixPath(relative).parts
+                  assert not forbidden.search(relative), f'Disallowed path: {relative}'
+                  assert not stat.S_ISLNK(entry.external_attr >> 16), f'Symlink not permitted: {relative}'
+                  assert entry.file_size < 5_000_000, f'Oversized entry: {relative}'
+                  total += entry.file_size
+                  assert total < 20_000_000, 'Unexpected archive size'
+                  target = (root / relative).resolve()
+                  assert target.is_relative_to(root)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  # Preserve this extraction workflow; its source is the checked-in workflow.
+                  if relative == '.github/workflows/extract-staging-source.yml':
+                      continue
+                  target.write_bytes(z.read(entry))
+          for path in ['package.json','package-lock.json','Dockerfile','prisma/schema.prisma','.github/workflows/cloudflare-staging.yml']:
+              assert (root / path).is_file(), f'Missing required project file: {path}'
+          print(f'Extracted {len(files)} entries after validation')
+          PY
+      - name: Commit extracted source on staging branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'development/cloudflare-staging'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- ':!CashNCarry-Staging.zip'
+          if git diff --cached --quiet; then
+            echo 'Nothing new to commit.'
+          else
+            git commit -m 'chore(staging): extract verified staging source from uploaded archive'
+            git push origin HEAD:refs/heads/development/cloudflare-staging
+          fi
