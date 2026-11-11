@@ -1,0 +1,1 @@
+ALTER TABLE "VideoPost" ADD COLUMN "media" BYTEA;

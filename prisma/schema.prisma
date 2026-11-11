@@ -1,0 +1,584 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  BUYER
+  SELLER
+  ADMIN
+}
+enum SellerStatus {
+  PENDING
+  VERIFIED
+  SUSPENDED
+}
+enum OrderStatus {
+  PENDING
+  PAID
+  PACKING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+enum PaymentProvider {
+  FLUTTERWAVE
+  PAYSTACK
+  MANUAL
+}
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+enum ActivityType {
+  LOGIN
+  ORDER_CREATED
+  ORDER_PAID
+  ORDER_STATUS_CHANGED
+  KYC_DOCUMENT_ACCESSED
+  COINS_CREDITED
+  GIFT_SENT
+  DISPUTE_OPENED
+  DISPUTE_RESOLVED
+  USER_STATUS_CHANGED
+  ORDER_REFUNDED
+  PRODUCT_CREATED
+  PRODUCT_UPDATED
+  SELLER_VERIFIED
+  MESSAGE_SENT
+  PAYMENT_VERIFIED
+}
+
+model User {
+  id                   String          @id @default(cuid())
+  email                String          @unique
+  name                 String
+  passwordHash         String
+  role                 Role            @default(BUYER)
+  avatarUrl            String?
+  isActive             Boolean         @default(true)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  addresses            Address[]
+  orders               Order[]
+  cart                 Cart?
+  wishlist             WishlistItem[]
+  reviews              Review[]
+  notifications        Notification[]
+  sentMessages         Message[]       @relation("sentMessages")
+  receivedMessages     Message[]       @relation("receivedMessages")
+  sellerProfile        SellerProfile?
+  sellerKyc            SellerKyc?
+  payments             Payment[]
+  auditLogs            AuditLog[]
+  following            Follow[]        @relation("followedBy")
+  followers            Follow[]        @relation("following")
+  videos               VideoPost[]
+  comments             VideoComment[]
+  bids                 Bid[]
+  auctionsWon          Auction[]       @relation("auctionWinner")
+  giftsReceived        Gift[]          @relation("giftReceiver")
+  giftsSent            Gift[]          @relation("giftSender")
+  coinLedger           CoinLedger[]
+  sessions             Session[]
+  passwordResetTokens  PasswordResetToken[]
+  disputesOpened       Dispute[]
+  videoLikes           VideoLike[]
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
+}
+
+model SellerProfile {
+  id               String       @id @default(cuid())
+  userId           String       @unique
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName     String
+  storefrontName   String
+  storeDescription String?
+  location         String?
+  status           SellerStatus @default(PENDING)
+  rating           Float        @default(0)
+  verificationNote String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  settlements      SellerSettlement[]
+  shipments        OrderShipment[]
+  products         Product[]
+  livestreams      LiveStream[]
+  auctions          Auction[]
+  kyc              SellerKyc?
+}
+
+model SellerKyc {
+  id           String       @id @default(cuid())
+  userId       String       @unique
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerId     String?      @unique
+  seller       SellerProfile? @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  status       KycStatus    @default(PENDING)
+  documentType String?
+  documentUrl  String?
+  documentData Bytes?
+  documentObjectKey String?
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  createdAt    DateTime     @default(now())
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  imageUrl  String?
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id             String        @id @default(cuid())
+  sellerId       String
+  seller         SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  categoryId     String?
+  category       Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  title          String
+  slug           String        @unique
+  description    String
+  price          Decimal       @db.Decimal(12, 2)
+  compareAtPrice Decimal?      @db.Decimal(12, 2)
+  dealPrice      Decimal?      @db.Decimal(12, 2)
+  dealStartsAt   DateTime?
+  dealEndsAt     DateTime?
+  dealRemaining  Int?
+  stock          Int           @default(0)
+  rating         Float         @default(0)
+  reviewCount    Int           @default(0)
+  imageUrl       String
+  images         String        @default("[]")
+  sku            String?
+  featured       Boolean       @default(false)
+  published      Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  reviews        Review[]
+  wishlistItems  WishlistItem[]
+  orderItems     OrderItem[]
+  cartItems      CartItem[]
+  videos         VideoPost[]
+  auctions       Auction[]
+  pinnedStreams LiveStream[] @relation("PinnedProduct")
+  @@index([sellerId, published])
+  @@index([categoryId, published])
+}
+
+model Cart {
+  id        String      @id @default(cuid())
+  userId    String      @unique
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  items     CartItem[]
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  @@unique([cartId, productId])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status          OrderStatus @default(PENDING)
+  total           Decimal     @db.Decimal(12, 2)
+  checkoutKey     String?
+  reservationEnds DateTime?
+  shippingAddress String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  items           OrderItem[]
+  shipments       OrderShipment[]
+  payments        Payment[]
+  disputes        Dispute[]
+  auction         Auction?
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([status, reservationEnds])
+  @@unique([userId, checkoutKey])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shipmentId String?
+  shipment   OrderShipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  dealStartsAt DateTime?
+  returns     ReturnRequest[]
+  quantity  Int      @default(1)
+  price     Decimal  @db.Decimal(12, 2)
+}
+
+model Payment {
+  id         String         @id @default(cuid())
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  orderId    String?
+  order      Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  provider   PaymentProvider
+  checkoutUrl String?
+  providerRef String?       @unique
+  amount     Decimal        @db.Decimal(12, 2)
+  currency   String         @default("NGN")
+  status     PaymentStatus  @default(PENDING)
+  metadata   String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  settlements SellerSettlement[]
+  refunds    Refund[]
+  @@index([userId, createdAt])
+  @@index([orderId, status])
+}
+
+model Refund {
+  id        String   @id @default(cuid())
+  paymentId String
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  amount    Decimal  @db.Decimal(12, 2)
+  returnId   String?
+  returnRequest ReturnRequest? @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  reason    String
+  status    String   @default("PENDING")
+  requestKey String? @unique
+  providerRef String?
+  createdAt DateTime @default(now())
+}
+
+model Dispute {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  openedById  String
+  openedBy    User     @relation(fields: [openedById], references: [id], onDelete: Restrict)
+  reason      String
+  description String
+  status      String   @default("OPEN")
+  resolution  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([status, createdAt])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, productId])
+}
+
+model MessageThread {
+  id            String    @id @default(cuid())
+  title         String?
+  participants  String
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  messages      Message[]
+}
+
+model Message {
+  id         String        @id @default(cuid())
+  threadId   String
+  thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User          @relation("sentMessages", fields: [senderId], references: [id], onDelete: Restrict)
+  receiverId String?
+  receiver   User?         @relation("receivedMessages", fields: [receiverId], references: [id], onDelete: SetNull)
+  text       String
+  deliveredAt DateTime?
+  createdAt  DateTime      @default(now())
+  @@index([threadId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String    @default("info")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model LiveStream {
+  id        String         @id @default(cuid())
+  sellerId  String
+  seller    SellerProfile  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  title     String
+  status    String         @default("SCHEDULED")
+  pinnedProductId String?
+  pinnedProduct Product? @relation("PinnedProduct", fields: [pinnedProductId], references: [id], onDelete: SetNull)
+  pinnedAuctionId String?
+  pinnedAuction Auction? @relation("PinnedAuction", fields: [pinnedAuctionId], references: [id], onDelete: SetNull)
+  startsAt  DateTime?
+  viewers   Int            @default(0)
+  streamKey String?
+  createdAt DateTime       @default(now())
+}
+
+model Auction {
+  id          String         @id @default(cuid())
+  sellerId    String
+  seller      SellerProfile  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  orderId     String?        @unique
+  order       Order?         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  closedAt    DateTime?
+  releasedAt  DateTime?
+  title       String
+  endsAt      DateTime
+  startingBid Decimal        @db.Decimal(12, 2)
+  currentBid  Decimal?       @db.Decimal(12, 2)
+  winnerId    String?
+  winner      User?          @relation("auctionWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+  bids        Bid[]
+  pinnedStreams LiveStream[] @relation("PinnedAuction")
+}
+
+model Bid {
+  id        String   @id @default(cuid())
+  auctionId String
+  auction   Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  bidderId  String
+  bidder    User     @relation(fields: [bidderId], references: [id], onDelete: Restrict)
+  amount    Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+  @@index([auctionId, amount])
+}
+
+model Follow {
+  id         String   @id @default(cuid())
+  followerId String
+  follower   User     @relation("followedBy", fields: [followerId], references: [id], onDelete: Cascade)
+  targetId   String
+  target     User     @relation("following", fields: [targetId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  @@unique([followerId, targetId])
+}
+
+model VideoPost {
+  id            String        @id @default(cuid())
+  creatorId     String
+  creator       User          @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  title         String
+  description   String?
+  media         Bytes?
+  videoUrl      String
+  thumbnailUrl  String?
+  likes         Int           @default(0)
+  commentsCount Int           @default(0)
+  visibility    String        @default("PUBLIC")
+  createdAt     DateTime      @default(now())
+  comments      VideoComment[]
+  likesBy       VideoLike[]
+}
+
+model VideoLike {
+  id        String   @id @default(cuid())
+  videoId   String
+  video     VideoPost @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([videoId, userId])
+}
+
+model VideoComment {
+  id        String     @id @default(cuid())
+  videoId   String
+  video     VideoPost  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime   @default(now())
+}
+
+model Gift {
+  id         String   @id @default(cuid())
+  requestKey String?  @unique
+  receiverId String
+  receiver   User     @relation("giftReceiver", fields: [receiverId], references: [id], onDelete: Restrict)
+  senderId   String
+  sender     User     @relation("giftSender", fields: [senderId], references: [id], onDelete: Restrict)
+  amount     Int
+  type       String
+  createdAt  DateTime @default(now())
+}
+
+model CoinLedger {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delta          Int
+  reason         String
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id        String       @id @default(cuid())
+  userId    String?
+  user      User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      ActivityType
+  message   String
+  metadata  String?
+  createdAt DateTime     @default(now())
+  @@index([createdAt])
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  address   String
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+}
+
+model AuthRateBucket {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+
+
+model OrderShipment {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sellerId    String
+  seller      SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  status      OrderStatus   @default(PENDING)
+  carrier     String?
+  trackingRef String?
+  trackingEvents ShipmentTrackingEvent[]
+  items       OrderItem[]
+  @@unique([orderId, sellerId])
+  @@index([sellerId])
+}
+
+
+model SellerSettlement {
+  id        String        @id @default(cuid())
+  paymentId String
+  payment   Payment       @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  sellerId  String
+  seller    SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  gross     Decimal       @db.Decimal(12, 2)
+  currency  String
+  payoutDraft PayoutDraft?
+  createdAt DateTime      @default(now())
+  @@unique([paymentId, sellerId])
+  @@index([sellerId, createdAt])
+}
+
+model ShipmentTrackingEvent {
+  id          String        @id @default(cuid())
+  shipmentId  String
+  shipment    OrderShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  eventId     String
+  status      String
+  occurredAt  DateTime
+  createdAt   DateTime      @default(now())
+  @@unique([shipmentId, eventId])
+  @@index([shipmentId, occurredAt])
+}
+
+model ReturnRequest {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  requestId   String    @unique
+  quantity    Int
+  reason      String
+  status      String    @default("REQUESTED")
+  refunds     Refund[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  @@index([orderItemId, status])
+}
+
+model PayoutDraft {
+  id           String           @id @default(cuid())
+  settlementId String          @unique
+  settlement   SellerSettlement @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  amount       Decimal          @db.Decimal(12, 2)
+  commissionBps Int @default(0)
+  commissionAmount Decimal @default(0) @db.Decimal(12, 2)
+  currency     String
+  status       String           @default("DRAFT")
+  preparedBy   String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}

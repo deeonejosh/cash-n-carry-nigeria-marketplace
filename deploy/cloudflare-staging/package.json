@@ -1,0 +1,6 @@
+{
+  "name": "cashncarry-cloudflare-staging-deployer",
+  "private": true,
+  "type": "module",
+  "devDependencies": {"cf": "^0.12.0"}
+}

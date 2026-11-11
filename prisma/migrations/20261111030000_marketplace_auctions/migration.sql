@@ -1,0 +1,4 @@
+ALTER TABLE "Auction" ADD COLUMN "productId" TEXT, ADD COLUMN "orderId" TEXT, ADD COLUMN "closedAt" TIMESTAMP(3), ADD COLUMN "releasedAt" TIMESTAMP(3);
+CREATE UNIQUE INDEX "Auction_orderId_key" ON "Auction"("orderId");
+ALTER TABLE "Auction" ADD CONSTRAINT "Auction_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Auction" ADD CONSTRAINT "Auction_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

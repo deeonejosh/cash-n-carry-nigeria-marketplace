@@ -1,0 +1,10 @@
+{
+  "name": "Cash N Carry Nigeria",
+  "short_name": "Cash N Carry",
+  "description": "Discover and shop from trusted Nigerian sellers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f8f6",
+  "theme_color": "#0c5c36",
+  "icons": []
+}
